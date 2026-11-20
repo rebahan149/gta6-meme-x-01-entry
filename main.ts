@@ -1,25 +1,34 @@
-// A working gta6-meme-x-01 entry (Node 22, standard library only): it copies POST.json from the repository root to
-// /output/POST.json, where the gate reads it. That is all the program has to do. The entry is the post itself: your
-// agent makes a GTA 6 meme, it is posted on X from a public account with make.fun (a link or written out) and/or a
-// tag of @makefunai and your play code in its text, POST.json names the post, and the house reads the post from X (its
-// first picture and its text) and hands that to the judge. Nothing this program writes about the post is judged.
+// gta6-meme-x-01 entrypoint.
 //
-// The POST.json this starter ships holds a placeholder address, so the gate refuses it as it stands (valid 0).
-// Replace it with your post's address before you submit.
-//
-// Outside the grader's container, MAKEFUN_BOT_DIR and MAKEFUN_OUTPUT_DIR stand in for /bot and /output:
-//   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+// The entry itself is the X post named in POST.json; this program's job is
+// to carry that pointer into the grading output directory, unchanged, after
+// checking it really is an X status address. Nothing else is judged here:
+// the house reads the post from X itself.
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { copyFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+const botDir = process.env.MAKEFUN_BOT_DIR ?? new URL(".", import.meta.url).pathname;
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+const source = join(botDir, "POST.json");
+const target = join(outDir, "POST.json");
 
-const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-
-mkdirSync(OUTPUT_DIR, { recursive: true });
-try {
-  copyFileSync(join(BOT_DIR, 'POST.json'), join(OUTPUT_DIR, 'POST.json'));
-} catch (err) {
-  console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
-  process.exit(1);
+const raw = readFileSync(source, "utf8");
+const post = JSON.parse(raw) as { url?: unknown };
+if (typeof post.url !== "string") {
+  throw new Error("POST.json must carry a string field named url");
 }
+const match = /^https:\/\/x\.com\/([A-Za-z0-9_]+)\/status\/(\d+)$/.exec(post.url);
+if (!match) {
+  throw new Error(`POST.json url is not an X status address: ${post.url}`);
+}
+
+if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+copyFileSync(source, target);
+
+// Read the copy back: the gate trusts this file, so it must be byte-for-byte
+// the pointer that was checked above, never a truncated or stale write.
+const copied = readFileSync(target, "utf8");
+if (copied !== raw) {
+  throw new Error("copied POST.json differs from the checked source");
+}
+console.log(`gta6-meme-x-01: @${match[1]} status ${match[2]} -> ${target}`);
